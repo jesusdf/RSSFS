@@ -21,7 +21,7 @@
  * $Id$
  */
 
-#define FUSE_USE_VERSION  26 
+#define FUSE_USE_VERSION  26
 #include <fuse.h>
 #include <stdio.h>
 #include <errno.h>
@@ -203,5 +203,5 @@ int main(int argc, char *argv[]) {
     // Don't send the URL data to fuse.
     fusev[0] = argv[0];
     fusev[1] = argv[2];
-    return fuse_main(argc-1, fusev, &rssfs_oper);
+    return fuse_main(argc-1, fusev, &rssfs_oper, NULL);
 }
