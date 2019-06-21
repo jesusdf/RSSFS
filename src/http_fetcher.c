@@ -57,12 +57,58 @@ size_t WriteMemoryCallback(void *ptr, size_t size, size_t nmemb, void *data) {
     return realsize;
 }
 
+// Fetch a URL, returns the file size in int, or NULL if there is an error. Pass a char pointer reference to get the data.
+long int fetch_url_size(char *url) {
+    CURL *cu ;
+    CURLcode c;
+    double cl = 0;
+    char *cc;
+
+    cu = curl_easy_init(); 
+    curl_easy_setopt(cu,CURLOPT_URL, url);
+    curl_easy_setopt(cu,CURLOPT_HEADER,1);
+    curl_easy_setopt(cu,CURLOPT_NOBODY,1);
+
+    /* skip ssl verification */
+    curl_easy_setopt(cu, CURLOPT_SSL_VERIFYPEER, 0L);
+
+    /* skip hostname verification */
+    curl_easy_setopt(cu, CURLOPT_SSL_VERIFYHOST, 0L);
+
+    /* some servers don't like requests that are made without a user-agent
+    field, so we provide one */
+    curl_easy_setopt(cu, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+
+    /* Cookie test */
+    curl_easy_setopt(cu, CURLOPT_COOKIE, "uid=xxxx; pass=xxx;");
+
+    c = curl_easy_perform(cu);
+    if(c) {
+        #ifdef DEBUG
+            syslog(LOG_INFO, "Could not get url info!");
+        #endif
+    } else {
+        c = curl_easy_getinfo(cu, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &cl); 
+        if(c) {
+            #ifdef DEBUG
+                syslog(LOG_INFO, "Could not get url file size!");
+            #endif
+        }
+    }
+    curl_easy_cleanup(cu); 
+    curl_global_cleanup();
+
+    return cl;
+
+}
 
 // Fetch a URL, returns the file size in int, or NULL if there is an error. Pass a char pointer reference to get the data.
 long int fetch_url(char *url, char **fileBuf) {
     CURL *curl_handle;
 
     struct MemoryStruct chunk;
+    CURLcode res;
+    long int r = -1;
 
     chunk.memory=NULL; /* we expect realloc(NULL, size) to work */
     chunk.size = 0;    /* no data at this point */
@@ -72,36 +118,51 @@ long int fetch_url(char *url, char **fileBuf) {
     /* init the curl session */
     curl_handle = curl_easy_init();
 
-    /* specify URL to get */
-    curl_easy_setopt(curl_handle, CURLOPT_URL, url);
+    if(curl_handle) {
 
-    /* send all data to this function  */
-    curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+        /* specify URL to get */
+        curl_easy_setopt(curl_handle, CURLOPT_URL, url);
 
-    /* we pass our 'chunk' struct to the callback function */
-    curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
+        /* skip ssl verification */
+        curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 0L);
 
-    /* some servers don't like requests that are made without a user-agent
-       field, so we provide one */
-    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+        /* skip hostname verification */
+        curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYHOST, 0L);
 
-    // Cookie test
-    curl_easy_setopt(curl_handle, CURLOPT_COOKIE, "uid=xxxx; pass=xxx;");
+        /* send all data to this function  */
+        curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
 
-    /* get it! */
-    curl_easy_perform(curl_handle);
+        /* we pass our 'chunk' struct to the callback function */
+        curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
 
-    /* cleanup curl stuff */
-    curl_easy_cleanup(curl_handle);
+        /* some servers don't like requests that are made without a user-agent
+        field, so we provide one */
+        curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
 
+        /* Cookie test */
+        curl_easy_setopt(curl_handle, CURLOPT_COOKIE, "uid=xxxx; pass=xxx;");
 
-    *fileBuf = (char *)chunk.memory;
+        /* get it! */ 
+        res = curl_easy_perform(curl_handle);
 
-    if(chunk.memory) {
-        free(chunk.memory);
-        return (long int)chunk.size;
-    } else {
-        return -1;
+        /* check for errors */ 
+        if(res != CURLE_OK) {
+            fprintf(stderr, "curl_easy_perform() failed: %s\n",
+                    curl_easy_strerror(res));
+        }
+        else
+        {
+            r = (long int)chunk.size;
+
+            *fileBuf = (char *)chunk.memory;
+
+            /* cleanup curl stuff */
+            curl_easy_cleanup(curl_handle);
+        }
     }
+    
+    curl_global_cleanup();
+
+    return r;
 }
 

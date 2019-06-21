@@ -21,4 +21,5 @@
  * $Id$
  */
 
+long int fetch_url_size(char *url);
 long int fetch_url(char *url, char **fileBuf);

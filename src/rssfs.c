@@ -152,12 +152,15 @@ static int rssfs_read(const char *path, char *buf, size_t size, off_t offset, st
 static void * rssfs_init(void) {
 #ifdef DEBUG
     syslog(LOG_INFO, "Mounted");
-    syslog(LOG_INFO, "Loading RSS feed '%s", url);
+    syslog(LOG_INFO, "Loading RSS feed '%s'", url);
 #endif
     // Fetch our RSS data
     datalist = loadRSS(url);
 
     if (datalist == NULL) {
+        #ifdef DEBUG
+            syslog(LOG_INFO, "Could not open or parse: '%s'\n", url);
+        #endif 
         fprintf(stderr, "Could not open or parse: '%s'\n", url);
         exit(EXIT_FAILURE);
     } else {

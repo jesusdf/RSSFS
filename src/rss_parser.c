@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <unistd.h>
 
 #include "rssfs.h"
 #include "rss_parser.h"
@@ -52,6 +54,50 @@ char *checkFilename(char *filename) {
     }
 }
 
+#ifdef MULTITHREADS
+
+pthread_mutex_t urlMutex;
+
+static void * threadGetSize(void *arg) {
+    RssData *datalist = (RssData *) arg;
+    
+    if (datalist != NULL) {
+        // enabling this makes listing files asynchronous, but file size is delayed
+        //pthread_detach(datalist->thread);
+        pthread_mutex_lock(&urlMutex);
+        datalist->size = fetch_url_size(datalist->link);
+        pthread_mutex_unlock(&urlMutex);
+        #ifdef DEBUG
+            syslog(LOG_INFO, "Size is %ld for '%s'", datalist->size, datalist->link);
+        #endif 
+    }
+    
+    pthread_exit(NULL);
+    return 0;
+}
+
+void waitForData(RssData *datalist) {
+    
+    RssData *current = datalist;
+    
+    #ifdef DEBUG
+        syslog(LOG_INFO, "Waiting for threads...");
+    #endif 
+
+    while (current != NULL) {
+        if (current->thread) {
+            pthread_join(current->thread, NULL);
+        }
+        current = current->next;
+    }
+
+    #ifdef DEBUG
+        syslog(LOG_INFO, "All threads finished.");
+    #endif
+}
+
+#endif
+
 // Adds a record to a RssData struct
 RssData * addRecord(RssData *datalist, int counter, const xmlChar *title, const xmlChar *link, long int size) {
     //printf("Add %d: %s - %s!\n", counter, (char *)title, (char *)link);
@@ -64,13 +110,23 @@ RssData * addRecord(RssData *datalist, int counter, const xmlChar *title, const 
         fprintf(stderr, "Could not allocate memory\n");
     }
     new->number = counter;
+    new->size = 0;
 #ifdef RSSEXT
     sprintf(new->title, "%s%s", titleclean, RSSEXT);
 #else
     sprintf(new->title, "%s", titleclean);
 #endif
     sprintf(new->link, "%s", link);
-    new->size = size;
+    if (size == -1) {
+        #ifdef MULTITHREADS
+            /* get file size on a separate thread */
+            pthread_create(&new->thread, NULL, &threadGetSize, new);
+        #else
+            new->size = fetch_url_size(new->link);
+        #endif
+    } else {
+        new->size = size;
+    }
     new->next = datalist;
     datalist = new;
     return datalist;
@@ -130,8 +186,10 @@ long int getRecordFileSizeByTitle(RssData *datalist, const char *title) {
     RssData *current = datalist;
     while ((current != NULL) && !found) {
         if (!strcmp(current->title, title)) {
+            long int s = -1;
             found = 1;
-            return current->size;
+            s = current->size;
+            return s;
         } else {
             current = current->next;
         }
@@ -147,8 +205,11 @@ static RssData * iterate_xml(xmlNode *root_node) {
     xmlChar * title;
     RssData * datalist = NULL;
     int counter = 0;
-    char * file_content;
-    long int size;
+    long int size = -1;
+
+    #ifdef MULTITHREADS
+        pthread_mutex_init(&urlMutex, NULL);
+    #endif
 
     // Top level (<rss>)
     for (; root_node; root_node = root_node->next) {
@@ -174,31 +235,32 @@ static RssData * iterate_xml(xmlNode *root_node) {
 
                 // Item sub level (<title>, <link>, <description>)
                 for (item_node_children = channel_node_children->children; item_node_children; item_node_children = item_node_children->next) {
-
-                    // We don't care about description
-                    if ((item_node_children->type != XML_ELEMENT_NODE) || (strcmp((const char *)item_node_children->name, "description") == 0)) {
+                    if (item_node_children->type != XML_ELEMENT_NODE)
                         continue;
+
+                    if (strcmp((const char *)item_node_children->name, "title") == 0) {
+                        title = item_node_children->children->content;
                     }
 
                     // Set our link and titles
                     if (strcmp((const char *)item_node_children->name, "link") == 0) {
                         link = item_node_children->children->content;
-                        // Download and calculate file size
-                        size = fetch_url((char *)link, &file_content);
-
-                        if (size == -1) {
-                            size = 0;
-                        }
-                    } else if (strcmp((const char *)item_node_children->name, "title") == 0) {
-                        title = item_node_children->children->content;
                     }
                 }
+
                 // Add the item's data to a linked list
                 datalist = addRecord(datalist, counter, title, link, size);
                 //printf("%d %s %s\n", counter, link, title);
+
             }
         }
     }
+
+    #ifdef MULTITHREADS
+        waitForData(datalist);
+        pthread_mutex_destroy(&urlMutex);
+    #endif
+
     return datalist;
 }
 
@@ -206,23 +268,50 @@ static RssData * iterate_xml(xmlNode *root_node) {
 RssData * loadRSS(char *url) {
     xmlDoc *doc = NULL;
     xmlNode *root_element = NULL;
+    char * file_content;
+    long int size;
 
     LIBXML_TEST_VERSION
 
-        doc = xmlReadFile(url, NULL, 0);
+    #ifdef DEBUG
+        syslog(LOG_INFO, "Reading XML...");
+    #endif 
 
-    if (doc == NULL) {
-        return NULL;
+    size = fetch_url(url, &file_content);
+
+    if (size == -1) {
+        #ifdef DEBUG
+            syslog(LOG_INFO, "Download failed.");
+        #endif 
+        size = 0;
     }
-    root_element = xmlDocGetRootElement(doc);
+
+    if (size >0) 
+    {
+
+        /* doc = xmlReadFile(url, NULL, 0); */
+        doc = xmlReadDoc((xmlChar *)(file_content), NULL, NULL, XML_PARSE_NOBLANKS | XML_PARSE_OLD10);
+
+        if (doc == NULL) {
+            #ifdef DEBUG
+                syslog(LOG_INFO, "No content.");
+            #endif
+            return NULL;
+        }
+        root_element = xmlDocGetRootElement(doc);
 
 
-    RssData * datalist = iterate_xml(root_element);
+        RssData * datalist = iterate_xml(root_element);
 
-    xmlFreeDoc(doc);
-    xmlCleanupParser();
+        xmlFreeDoc(doc);
+        xmlCleanupParser();
 
-    return datalist;
+        return datalist;
+
+    }
+
+    return NULL;
+
 }
 
 #else

@@ -26,6 +26,9 @@
 // Extension to use in the file names (this appends to the rss <title> tag, remove it if you dont want one.
 #define RSSEXT ".torrent"
 
+// Whether to use multithreading or not
+#define MULTITHREADS
+
 // Whether to print LOG_DEBUG messages to syslog
 #define DEBUG
 

@@ -30,6 +30,9 @@ typedef struct RssData {
     char title[255];
     char link[255];
     long int size;
+    #ifdef MULTITHREADS
+        pthread_t thread;
+    #endif
     struct RssData *next;
 } RssData;
 
@@ -41,5 +44,8 @@ void printAllRecords(RssData *datalist);
 int findRecordByTitle(RssData *datalist, const char *title);
 char * getRecordUrlByTitle(RssData *datalist, const char *title);
 long int getRecordFileSizeByTitle(RssData *datalist, const char *title);
+#ifdef MULTITHREADS
+void waitForData(RssData *datalist);
+#endif
 RssData * loadRSS(char *url);
 
