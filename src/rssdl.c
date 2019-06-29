@@ -97,9 +97,6 @@ int download_main(char * rssUrl, char * downloadPath) {
     if (current != NULL) {
         while (current != NULL) {
             res = download_file(current->title, current->link);
-            if (!res) {
-                return EXIT_FAILURE;
-            }
             current = current->next;
         }
     }

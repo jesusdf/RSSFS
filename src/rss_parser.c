@@ -217,6 +217,12 @@ long int getRecordFileSizeByTitle(RssData *datalist, const char *title) {
     return -1;
 }
 
+void startIteration(void) {
+    #ifdef MULTITHREADS
+        pthread_mutex_init(&urlMutex, NULL);
+    #endif
+}
+
 void ensureIterationFinished(RssData * datalist) {
     #ifndef DELAY_METADATA_LOADING
         #ifdef MULTITHREADS
@@ -236,9 +242,7 @@ static RssData * iterate_xml(xmlNode *root_node) {
     int counter = 0;
     long int size = -1;
 
-    #ifdef MULTITHREADS
-        pthread_mutex_init(&urlMutex, NULL);
-    #endif
+    startIteration();
 
     // Top level (<rss>)
     for (; root_node; root_node = root_node->next) {
@@ -286,6 +290,11 @@ static RssData * iterate_xml(xmlNode *root_node) {
     }
 
     ensureIterationFinished(datalist);
+
+    printf("Found %d items.\n", counter);
+    #ifdef DEBUG
+        syslog(LOG_INFO, "%d items found.", counter);
+    #endif 
 
     return datalist;
 }
