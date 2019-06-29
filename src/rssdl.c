@@ -20,10 +20,6 @@
 // The linked list struct for our data
 RssData * datalist;
 
-// WARNING SHOULD BE LONG LONG
-static long int file_size;
-static char *url;
-
 int download_file(char * file, char * fileUrl){
     int res;
     long int file_size;
@@ -71,7 +67,7 @@ int download_file(char * file, char * fileUrl){
 
 }
 
-int download_main(char * rssUrl, char * downloadPath) {
+int download_main(char * rssUrl, char * downloadPath, int dryRun) {
     int res;
 
     printf("Loading...\n");
@@ -79,10 +75,10 @@ int download_main(char * rssUrl, char * downloadPath) {
     datalist = loadRSS(rssUrl);
 
     if (datalist == NULL) {
-        fprintf(stderr, "Could not open or parse: '%s'\n", url);
+        fprintf(stderr, "Could not open or parse: '%s'\n", rssUrl);
         return EXIT_FAILURE;
     } else {
-        printf("RSS feed '%s' loaded.\n", url);
+        printf("RSS feed '%s' loaded.\n", rssUrl);
     }
 
     res = chdir(downloadPath);
@@ -96,7 +92,11 @@ int download_main(char * rssUrl, char * downloadPath) {
     RssData *current = datalist;
     if (current != NULL) {
         while (current != NULL) {
-            res = download_file(current->title, current->link);
+            if (dryRun) {
+                printf("%s OK\n", current->title);
+            } else {
+                res = download_file(current->title, current->link);
+            }
             current = current->next;
         }
     }
@@ -108,24 +108,24 @@ int download_main(char * rssUrl, char * downloadPath) {
 
 /* Print usage information on stderr */
 void usage(char * argve) {
-    fprintf(stderr, "Usage: %s url download-dir\n", argve);
+    fprintf(stderr, "Usage: %s [--dry-run] url download-dir\n", argve);
     fprintf(stderr, "Version: %s\n", VERSION);
 }
 
 /* Main function */
 int main(int argc, char *argv[]) {
-    char *fusev[2];
+    char *url;
+    char *path;
+    int dryRun=0;
 
-    if (argc != 3) {
+    if (argc < 3 | argc > 4) {
         usage(argv[0]);
         exit(EXIT_FAILURE);
     }
     
-    url = argv[1];
-
-    // Don't send the URL data to fuse.
-    fusev[0] = argv[0];
-    fusev[1] = argv[2];
+    dryRun=(argc == 4 && strncmp(argv[1],"--dry-run", 9) == 0);
+    url = argv[dryRun + 1];
+    path = argv[dryRun + 2];
     
-    return download_main(argv[1], argv[2]);
+    return download_main(url, path, dryRun);
 }
