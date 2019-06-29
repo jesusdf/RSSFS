@@ -56,9 +56,9 @@ static int rssfs_getattr(const char *path, struct stat *stbuf) {
         stbuf->st_mode = S_IFREG | 0555;
         stbuf->st_nlink = 1;
         if ((stbuf->st_size = getRecordFileSizeByTitle(datalist, path+1)) == -1) {
-#ifdef DEBUG
-            syslog(LOG_INFO, "Could not find file size!");
-#endif
+            #ifdef DEBUG
+                syslog(LOG_INFO, "Could not find '%s' file size!", path+1);
+            #endif
             stbuf->st_size = 0;
         }
     }
@@ -126,7 +126,17 @@ static int rssfs_read(const char *path, char *buf, size_t size, off_t offset, st
     }
 
     // Get the data
-    file_size = fetch_url(getRecordUrlByTitle(datalist, path+1), &file_content);
+    #ifdef PREFETCH
+        RssData * current = getRecordByTitle(datalist, path+1);
+        if (!current) {
+            fprintf(stderr, "Could not fetch '%s' from cache", path+1);
+            return -ENOENT;
+        }
+        file_size = current->size;
+        file_content = current->file_content;
+    #else
+        file_size = fetch_url(getRecordUrlByTitle(datalist, path+1), &file_content);
+    #endif
 
     if (file_size == -1) {
         fprintf(stderr, "Could not fetch '%s' from server", path+1);

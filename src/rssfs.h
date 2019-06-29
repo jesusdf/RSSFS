@@ -29,6 +29,16 @@
 // Whether to use multithreading or not
 #define MULTITHREADS
 
+// Download files to ram directly when parsing the RSS url
+// Toggable in Makefile
+#ifndef NO_PREFETCH
+    #define PREFETCH
+#endif
+
+// Don't query the server for file attributes when parsing the RSS file
+// Toggable in Makefile
+//#define DELAY_METADATA_LOADING
+
 // Whether to print LOG_DEBUG messages to syslog
 #define DEBUG
 

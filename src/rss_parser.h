@@ -30,6 +30,7 @@ typedef struct RssData {
     char title[255];
     char link[255];
     long int size;
+    char * file_content;
     #ifdef MULTITHREADS
         pthread_t thread;
     #endif
@@ -38,9 +39,11 @@ typedef struct RssData {
 
 extern char invalid_char[10];
 
+long int QueryFileSize(RssData * current);
 RssData * addRecord(RssData *datalist, int counter, const xmlChar *title, const xmlChar *link, long int size);
 void printRecord(RssData *datalist);
 void printAllRecords(RssData *datalist);
+RssData * getRecordByTitle(RssData *datalist, const char *title);
 int findRecordByTitle(RssData *datalist, const char *title);
 char * getRecordUrlByTitle(RssData *datalist, const char *title);
 long int getRecordFileSizeByTitle(RssData *datalist, const char *title);

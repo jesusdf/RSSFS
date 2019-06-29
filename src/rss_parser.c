@@ -54,6 +54,14 @@ char *checkFilename(char *filename) {
     }
 }
 
+static long int singleFetch(char * link, char * file_content) {
+    #ifdef PREFETCH
+        return fetch_url(link, &file_content);
+    #else
+        return fetch_url_size(link);
+    #endif
+}
+
 #ifdef MULTITHREADS
 
 pthread_mutex_t urlMutex;
@@ -65,7 +73,7 @@ static void * threadGetSize(void *arg) {
         // enabling this makes listing files asynchronous, but file size is delayed
         //pthread_detach(datalist->thread);
         pthread_mutex_lock(&urlMutex);
-        datalist->size = fetch_url_size(datalist->link);
+        datalist->size = singleFetch(datalist->link, datalist->file_content);
         pthread_mutex_unlock(&urlMutex);
         #ifdef DEBUG
             syslog(LOG_INFO, "Size is %ld for '%s'", datalist->size, datalist->link);
@@ -98,6 +106,15 @@ void waitForData(RssData *datalist) {
 
 #endif
 
+long int QueryFileSize(RssData * current) {
+    #ifdef MULTITHREADS
+        /* get file size on a separate thread */
+        pthread_create(&current->thread, NULL, &threadGetSize, current);
+    #else
+        return singleFetch(new->link, new->file_content);
+    #endif
+}
+
 // Adds a record to a RssData struct
 RssData * addRecord(RssData *datalist, int counter, const xmlChar *title, const xmlChar *link, long int size) {
     //printf("Add %d: %s - %s!\n", counter, (char *)title, (char *)link);
@@ -110,23 +127,22 @@ RssData * addRecord(RssData *datalist, int counter, const xmlChar *title, const 
         fprintf(stderr, "Could not allocate memory\n");
     }
     new->number = counter;
-    new->size = 0;
 #ifdef RSSEXT
     sprintf(new->title, "%s%s", titleclean, RSSEXT);
 #else
     sprintf(new->title, "%s", titleclean);
 #endif
     sprintf(new->link, "%s", link);
-    if (size == -1) {
-        #ifdef MULTITHREADS
-            /* get file size on a separate thread */
-            pthread_create(&new->thread, NULL, &threadGetSize, new);
-        #else
-            new->size = fetch_url_size(new->link);
-        #endif
-    } else {
-        new->size = size;
-    }
+    #ifdef DELAY_METADATA_LOADING
+        new->size = -1;
+    #else
+        new->size = 0;
+        if (size == -1) {
+            new->size = QueryFileSize(new);
+        } else {
+            new->size = size;
+        }
+    #endif
     new->next = datalist;
     datalist = new;
     return datalist;
@@ -149,19 +165,23 @@ void printAllRecords(RssData *datalist) {
     }
 }
 
-// Returns -1 for not found, and 0 for found.
-int findRecordByTitle(RssData *datalist, const char *title) {
+// Returns a pointer to the record if found, NULL otherwise.
+RssData * getRecordByTitle(RssData *datalist, const char *title) {
     int found = 0;
     RssData *current = datalist;
     while ((current != NULL) && !found) {
         if (!strcmp(current->title, title)) {
-            found = 1;
-            return 0;
+            return current;
         } else {
             current = current->next;
         }
     }
-    return -1;
+    return NULL;
+}
+
+// Returns -1 for not found, and 0 for found.
+int findRecordByTitle(RssData *datalist, const char *title) {
+    return getRecordByTitle(datalist, title) == NULL ? -1 : 0;
 }
 
 // Returns the url by title, or (char *)-1 if it cant be found.
@@ -195,6 +215,15 @@ long int getRecordFileSizeByTitle(RssData *datalist, const char *title) {
         }
     }
     return -1;
+}
+
+void ensureIterationFinished(RssData * datalist) {
+    #ifndef DELAY_METADATA_LOADING
+        #ifdef MULTITHREADS
+            waitForData(datalist);
+            pthread_mutex_destroy(&urlMutex);
+        #endif
+    #endif
 }
 
 static RssData * iterate_xml(xmlNode *root_node) {
@@ -256,10 +285,7 @@ static RssData * iterate_xml(xmlNode *root_node) {
         }
     }
 
-    #ifdef MULTITHREADS
-        waitForData(datalist);
-        pthread_mutex_destroy(&urlMutex);
-    #endif
+    ensureIterationFinished(datalist);
 
     return datalist;
 }
@@ -275,7 +301,17 @@ RssData * loadRSS(char *url) {
 
     #ifdef DEBUG
         syslog(LOG_INFO, "Reading XML...");
-    #endif 
+        #ifdef PREFETCH
+            syslog(LOG_INFO, "Prefetching enabled.");
+        #else
+            syslog(LOG_INFO, "Prefetching disabled.");
+        #endif
+        #ifdef DELAY_METADATA_LOADING
+            syslog(LOG_INFO, "Delaying metadata loading...");
+        #else
+            syslog(LOG_INFO, "Metadata loading on the fly...");
+        #endif
+    #endif
 
     size = fetch_url(url, &file_content);
 

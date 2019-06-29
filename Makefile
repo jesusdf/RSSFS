@@ -1,11 +1,16 @@
 CC = gcc
+PROGRAMS=rssfs rssdl
 FUSE_CFLAGS ?= `pkg-config --cflags --libs fuse`
 CURL_CFLAGS ?= `curl-config --cflags --libs`
 XML_CFLAGS ?= `xml2-config --cflags --libs`
+RSSDL_FLAGS=-DNO_PREFETCH -DDELAY_METADATA_LOADING
 
 rssfs: 
 	@$(CC) $(FUSE_CFLAGS) $(CURL_CFLAGS) $(XML_CFLAGS) src/http_fetcher.c src/rss_parser.c src/rssfs.c `pkg-config fuse --cflags --libs` -o rssfs -lcurl -lxml2 -lpthread -Wno-incompatible-pointer-types
+rssdl: 
+	@$(CC) $(CURL_CFLAGS) $(XML_CFLAGS) $(RSSDL_FLAGS) src/http_fetcher.c src/rss_parser.c src/rssdl.c -o rssdl -lcurl -lxml2 -lpthread -Wno-incompatible-pointer-types
 
-all: rssfs
+all: $(PROGRAMS)
 clean:
 	@rm -f rssfs
+	@rm -f rssdl
