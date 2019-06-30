@@ -292,7 +292,7 @@ static RssData * iterate_xml(xmlNode *root_node) {
 
     printf("Found %d items.\n", counter);
     #ifdef DEBUG
-        syslog(LOG_INFO, "%d items found.", counter);
+        syslog(LOG_INFO, "Found %d items.", counter);
     #endif 
 
     return datalist;
