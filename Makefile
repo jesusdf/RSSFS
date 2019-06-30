@@ -14,3 +14,5 @@ all: $(PROGRAMS)
 clean:
 	@rm -f rssfs
 	@rm -f rssdl
+install:
+	@cp rss* /usr/local/bin
