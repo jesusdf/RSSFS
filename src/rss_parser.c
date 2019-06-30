@@ -34,7 +34,6 @@
 // Invalid characters in filenames
 char invalid_char[10] = {'/', '\\', '?', '%', '*', ':', '|', '"', '<', '>'};
 
-
 // Checks filename, and replaces invalid chars the invalid_char character array.
 char *checkFilename(char *filename) {
     if (strcspn(filename, invalid_char) != strlen(filename)) {
