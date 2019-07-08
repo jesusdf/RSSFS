@@ -29,7 +29,7 @@ typedef int bool;
 
 #define SKIP(text, c) while((int)*text == c && *text != null) text++;
 #define SKIP_UNTIL(text, c) while((int)*text != c && (int)*text != null) text++;
-#define CLONE(a, b) a=calloc(strlen(b), sizeof(char)); for(char *p=b; *p != null; *(char *)(a + (p++ - b))=tolower(*p));
+#define CLONE(a, b) a=calloc(strlen(b), sizeof(char)); { char *p=b; while(*p != null) { *(char *)(a + (p - b))=tolower(*p); p++; }}
 #define COMPARE_WORD(a, b, equal) while (*a != null && *b != null && equal && *b != '?' && *b != '*' && *a == *b) { a++; b++; } equal=(*a == *b || *b == '?' || *b == '*');
 
 bool matches(char * text, char * pattern, bool ignoreCase) {
