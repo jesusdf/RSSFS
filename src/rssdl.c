@@ -12,74 +12,123 @@
 #include <asm/errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <malloc.h>
+#include <ctype.h>
 
 #include "rssfs.h"
 #include "http_fetcher.h"
 #include "rss_parser.h"
 
-#define true -1
-#define false 0
-
 // The linked list struct for our data
 RssData * datalist;
 
-// Function that matches input str with 
-// given wildcard pattern 
-// https://www.geeksforgeeks.org/wildcard-pattern-matching/
-int strmatch(char str[], char pattern[], 
-              int n, int m) 
-{ 
-    // empty pattern can only match with 
-    // empty string 
-    if (m == 0) 
-        return (n == 0); 
-  
-    // lookup table for storing results of 
-    // subproblems 
-    int lookup[n + 1][m + 1]; 
-  
-    // initailze lookup table to false 
-    memset(lookup, false, sizeof(lookup)); 
-  
-    // empty pattern can match with empty string 
-    lookup[0][0] = true;
-  
-    // Only '*' can match with empty string 
-    for (int j = 1; j <= m; j++) 
-        if (pattern[j - 1] == '*') 
-            lookup[0][j] = lookup[0][j - 1]; 
-  
-    // fill the table in bottom-up fashion 
-    for (int i = 1; i <= n; i++) 
-    { 
-        for (int j = 1; j <= m; j++) 
-        { 
-            // Two cases if we see a '*' 
-            // a) We ignore ‘*’ character and move 
-            //    to next  character in the pattern, 
-            //     i.e., ‘*’ indicates an empty sequence. 
-            // b) '*' character matches with ith 
-            //     character in input 
-            if (pattern[j - 1] == '*') 
-                lookup[i][j] = lookup[i][j - 1] || 
-                               lookup[i - 1][j]; 
-  
-            // Current characters are considered as 
-            // matching in two cases 
-            // (a) current character of pattern is '?' 
-            // (b) characters actually match 
-            else if (pattern[j - 1] == '?' || 
-                    str[i - 1] == pattern[j - 1]) 
-                lookup[i][j] = lookup[i - 1][j - 1]; 
-  
-            // If characters don't match 
-            else lookup[i][j] = false; 
-        } 
-    } 
-  
-    return lookup[n][m]; 
-} 
+typedef int bool;
+#define false 0
+#define true !false
+#define null false
 
+#define SKIP(text, c) while((int)*text == c && *text != null) text++;
+#define SKIP_UNTIL(text, c) while((int)*text != c && (int)*text != null) text++;
+#define CLONE(a, b) a=calloc(strlen(b), sizeof(char)); for(char *p=b; *p != null; *(char *)(a + (p++ - b))=tolower(*p));
+#define COMPARE_WORD(a, b, equal) while (*a != null && *b != null && equal && *b != '?' && *b != '*' && *a == *b) { a++; b++; } equal=(*a == *b || *b == '?' || *b == '*');
+
+bool matches(char * text, char * pattern, bool ignoreCase) {
+	bool areEqual = true;
+	bool anyChar = false;
+
+	/* No string to compare */
+	if (*text == null && *pattern == null)
+		return true;
+	/* No pattern is an error */
+	if (*pattern == null)
+		return false;
+
+	char * current;
+	char * challenge;
+	char * a;
+	char * b;
+	if (ignoreCase) {
+		/* make a lowercase copy to ignore case */
+		CLONE(a, text);
+		CLONE(b, pattern);
+		current = a;
+		challenge = b;
+	} else {
+		current = text;
+		challenge = pattern;
+	}
+	
+	char * next;
+	do {
+		next = (char *)(challenge + 1);
+		switch( *challenge ) {
+			case '*':
+				/* Skip redundant characters */
+				SKIP(challenge, '*');
+				anyChar = true;
+				break;
+			case '?':
+				while (*challenge == '?' && *current != null) {
+					if(anyChar && (*next == null)) {
+						SKIP_UNTIL(current, null);
+						current--;
+						anyChar = false;
+					}
+					challenge++;
+					current++;
+					next = (char *)(challenge + 1);
+				}
+				areEqual = ((*current == null && *challenge == null) ||
+							(*current != null && *challenge != null));
+				break;
+			default:
+				if (anyChar) {
+					/* Is it the last character? */
+					if (*next == null) {
+						SKIP_UNTIL(current, null);
+						current--;
+					} else {
+						/* Find a potential matching word */
+						SKIP_UNTIL(current, *challenge);
+					}
+				}
+				/* Compare the whole word */
+				COMPARE_WORD(current, challenge, areEqual);
+				if (areEqual) {
+					/* The next char is a * or ? or we finished */
+					anyChar = false;
+				} else {
+					if (anyChar) {
+						/* 
+						* If the previous challenge char was an asterisk,
+						* then we found a similar word, but not the exact one 
+						* that we were looking for.
+						*/
+						int wordSize = challenge - (next - 1);
+						/* Rewind + 1 and keep searching if there's text left. */
+						if (wordSize > 0) {
+							current = (char *)(current - wordSize + 1);
+							challenge = (next - 1);
+							if (*current == null) {
+								anyChar = false;
+							} else {
+								areEqual = true;
+							}
+						}
+					}
+				}
+				break;
+		}
+	} while (areEqual && *current != null && *challenge != null);
+
+	if (ignoreCase) {
+		free(a);
+		free(b);
+	}
+
+	return areEqual;
+
+}
 
 int download_file(char * file, char * fileUrl){
     int res;
@@ -162,7 +211,7 @@ int download_main(char * rssUrl, char * downloadPath, char * pattern, int dryRun
         while (current != NULL) {
 
             if (pattern != NULL && 
-                !strmatch(current->title, pattern, strlen(current->title), strlen(pattern))) {
+                !matches(current->title, pattern, true)) {
                 // filename doesn't match, skip it.
                 current = current->next;
                 continue;
